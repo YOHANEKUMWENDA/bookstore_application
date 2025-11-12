@@ -385,14 +385,3 @@ fun EditProfileScreen(
         )
     }
 }
-
-@Composable
- fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        fontSize = 18.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(vertical = 8.dp)
-    )
-}

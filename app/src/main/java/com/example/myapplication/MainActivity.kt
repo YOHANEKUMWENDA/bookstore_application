@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.example.myapplication.data.Book
 import com.example.myapplication.ui.theme.*
+import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,14 +60,26 @@ fun AppNavigation(
     isDarkMode: Boolean,
     onDarkModeToggle: () -> Unit
 ) {
-    var navigationStack by remember { mutableStateOf(listOf<Screen>(Screen.Landing)) }
+    val auth = FirebaseAuth.getInstance()
+    val currentUser = auth.currentUser
 
-    // Store user profile data
+    // Determine initial screen based on authentication state
+    val initialScreen = if (currentUser != null) {
+        // User is logged in - check if admin
+        val isAdmin = currentUser.email == "admin@gmail.com"
+        if (isAdmin) Screen.AdminDashboard else Screen.Home
+    } else {
+        Screen.Landing
+    }
+
+    var navigationStack by remember { mutableStateOf(listOf<Screen>(initialScreen)) }
+
+    // Store user profile data - sync with Firebase user
     var userProfile by remember {
         mutableStateOf(
             UserProfile(
-                name = "yohane kumwenda",
-                email = "yohanekumwenda@gmail.com",
+                name = currentUser?.displayName ?: "User",
+                email = currentUser?.email ?: "user@example.com",
                 phone = "+265 984518884",
                 address = "ZOMBA STREET 123",
                 city = "ZOMBA CITY",
@@ -90,11 +103,24 @@ fun AppNavigation(
 
     fun navigateToHome(isAdmin: Boolean) {
         val homeScreen = if (isAdmin) Screen.AdminDashboard else Screen.Home
+
+        // Update user profile with Firebase user data
+        val user = auth.currentUser
+        if (user != null) {
+            userProfile = userProfile.copy(
+                name = user.displayName ?: "User",
+                email = user.email ?: "user@example.com"
+            )
+        }
+
         // Clear stack and go to home
         navigationStack = listOf(homeScreen)
     }
-    
+
     fun logout() {
+        // Sign out from Firebase
+        auth.signOut()
+        // Clear stack and go to login
         navigationStack = listOf(Screen.Login)
     }
 
@@ -121,7 +147,7 @@ fun AppNavigation(
             onSearchClick = { navigateTo(Screen.Search) },
             onFavoritesClick = { navigateTo(Screen.Favorites) }
         )
-        
+
         is Screen.AdminDashboard -> AdminDashboard(onLogout = { logout() })
 
         is Screen.BookDetail -> BookDetailScreen(
@@ -147,10 +173,7 @@ fun AppNavigation(
 
         is Screen.Profile -> ProfileScreen(
             onBackClick = { navigateBack() },
-            onLogout = {
-                // Clear stack and go back to login
-                navigationStack = listOf(Screen.Login)
-            },
+            onLogout = { logout() },
             isDarkMode = isDarkMode,
             onDarkModeToggle = { onDarkModeToggle() },
             onEditProfileClick = { navigateTo(Screen.EditProfile) },
@@ -165,8 +188,25 @@ fun AppNavigation(
         is Screen.EditProfile -> EditProfileScreen(
             onBackClick = { navigateBack() },
             onSaveClick = { updatedProfile ->
-                // Save the updated profile
+                // Save the updated profile locally
                 userProfile = updatedProfile
+
+                // Also update Firebase user profile
+                val user = auth.currentUser
+                if (user != null) {
+                    val profileUpdates = com.google.firebase.auth.UserProfileChangeRequest.Builder()
+                        .setDisplayName(updatedProfile.name)
+                        .build()
+
+                    user.updateProfile(profileUpdates)
+                        .addOnSuccessListener {
+                            // Profile updated successfully
+                        }
+                        .addOnFailureListener { e ->
+                            // Handle error
+                        }
+                }
+
                 // Navigate back to profile screen
                 navigateBack()
             },
@@ -188,7 +228,7 @@ fun AppNavigation(
         is Screen.TermsConditions -> TermsConditionsScreen(
             onBackClick = { navigateBack() }
         )
-        
+
         is Screen.PaymentMethods -> PaymentMethodsScreen(
             onBackClick = { navigateBack() },
             onPaymentSuccess = { navigateBack() }

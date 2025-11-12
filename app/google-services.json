@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:1027552642351:android:bd4b3ad6606c6d18fc8dda",
+        "android_client_info": {
+          "package_name": "com.dayirebookstore"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDHIiXC_73Zo-k01S5ECXnA4wVo1F6sVDo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:1027552642351:android:2324696605dafb0efc8dda",
         "android_client_info": {
           "package_name": "com.example.myapplication"

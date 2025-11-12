@@ -22,18 +22,29 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
     onLoginSuccess: (isAdmin: Boolean) -> Unit,
-    onSignupClick: () -> Unit = {}
+    onSignupClick: () -> Unit = {},
+    context: android.content.Context = androidx.compose.ui.platform.LocalContext.current
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    val sharedPreferences = context.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
+
+    var email by remember { mutableStateOf(sharedPreferences.getString("saved_email", "") ?: "") }
+    var password by remember { mutableStateOf(sharedPreferences.getString("saved_password", "") ?: "") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var rememberMe by remember { mutableStateOf(false) }
+    var rememberMe by remember { mutableStateOf(sharedPreferences.getBoolean("remember_me", false)) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var successMessage by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    val auth = FirebaseAuth.getInstance()
+    val scope = rememberCoroutineScope()
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -80,7 +91,11 @@ fun LoginScreen(
             // Email TextField
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it },
+                onValueChange = {
+                    email = it
+                    errorMessage = null // Clear error when user types
+                    successMessage = null // Clear success message too
+                },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Email", color = Color.White) },
                 leadingIcon = {
@@ -95,7 +110,8 @@ fun LoginScreen(
                     focusedBorderColor = Color.White,
                     unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
                     cursorColor = Color.White
-                )
+                ),
+                enabled = !isLoading
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -103,7 +119,11 @@ fun LoginScreen(
             // Password TextField
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it },
+                onValueChange = {
+                    password = it
+                    errorMessage = null // Clear error when user types
+                    successMessage = null // Clear success message too
+                },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Password", color = Color.White) },
                 leadingIcon = {
@@ -131,16 +151,42 @@ fun LoginScreen(
                     unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
                     cursorColor = Color.White
                 ),
-                isError = errorMessage != null
+                isError = errorMessage != null,
+                enabled = !isLoading
             )
-            
+
             if (errorMessage != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = errorMessage!!,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 14.sp
-                )
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Red.copy(alpha = 0.8f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = errorMessage!!,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+
+            if (successMessage != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Green.copy(alpha = 0.8f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = successMessage!!,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -162,7 +208,8 @@ fun LoginScreen(
                             checkedColor = Color.White,
                             uncheckedColor = Color.White,
                             checkmarkColor = Color.Black
-                        )
+                        ),
+                        enabled = !isLoading
                     )
                     Text(
                         text = "Remember me",
@@ -171,7 +218,36 @@ fun LoginScreen(
                     )
                 }
 
-                TextButton(onClick = { /* Handle forgot password */ }) {
+                TextButton(
+                    onClick = {
+                        // Handle forgot password with Firebase
+                        if (email.isNotBlank()) {
+                            isLoading = true
+                            errorMessage = null
+                            successMessage = null
+
+                            scope.launch {
+                                try {
+                                    auth.sendPasswordResetEmail(email).await()
+                                    isLoading = false
+                                    successMessage = "Password reset email sent! Check your inbox."
+                                } catch (e: Exception) {
+                                    isLoading = false
+                                    errorMessage = when {
+                                        e.message?.contains("no user record") == true ->
+                                            "No account found with this email"
+                                        e.message?.contains("email address is badly formatted") == true ->
+                                            "Invalid email format"
+                                        else -> e.message ?: "Failed to send reset email"
+                                    }
+                                }
+                            }
+                        } else {
+                            errorMessage = "Please enter your email first"
+                        }
+                    },
+                    enabled = !isLoading
+                ) {
                     Text(
                         text = "Forgot Password?",
                         fontSize = 14.sp,
@@ -186,11 +262,57 @@ fun LoginScreen(
             Button(
                 onClick = {
                     if (email.isBlank() || password.isBlank()) {
-                        errorMessage = "Email and password cannot be empty."
-                    } else {
-                        errorMessage = null
-                        val isAdmin = email == "admin@gmail.com" && password == "1234"
-                        onLoginSuccess(isAdmin)
+                        errorMessage = "Email and password cannot be empty"
+                        return@Button
+                    }
+
+                    isLoading = true
+                    errorMessage = null
+                    successMessage = null
+
+                    scope.launch {
+                        try {
+                            // Sign in with Firebase
+                            val result = auth.signInWithEmailAndPassword(email, password).await()
+
+                            // Save credentials if Remember Me is checked
+                            if (rememberMe) {
+                                sharedPreferences.edit().apply {
+                                    putString("saved_email", email)
+                                    putString("saved_password", password)
+                                    putBoolean("remember_me", true)
+                                    apply()
+                                }
+                            } else {
+                                // Clear saved credentials
+                                sharedPreferences.edit().apply {
+                                    remove("saved_email")
+                                    remove("saved_password")
+                                    putBoolean("remember_me", false)
+                                    apply()
+                                }
+                            }
+
+                            // Check if user is admin
+                            val isAdmin = email == "admin@gmail.com"
+
+                            isLoading = false
+                            onLoginSuccess(isAdmin)
+                        } catch (e: Exception) {
+                            isLoading = false
+                            errorMessage = when {
+                                e.message?.contains("no user record") == true ->
+                                    "No account found with this email"
+                                e.message?.contains("password is invalid") == true ||
+                                        e.message?.contains("INVALID_LOGIN_CREDENTIALS") == true ->
+                                    "Incorrect email or password"
+                                e.message?.contains("email address is badly formatted") == true ->
+                                    "Invalid email format"
+                                e.message?.contains("network") == true ->
+                                    "Network error. Please check your connection"
+                                else -> e.message ?: "Login failed"
+                            }
+                        }
                     }
                 },
                 modifier = Modifier
@@ -200,13 +322,22 @@ fun LoginScreen(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.White,
                     contentColor = Color.Black
-                )
+                ),
+                enabled = !isLoading
             ) {
-                Text(
-                    text = "Login",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.Black,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = "Login",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -238,7 +369,8 @@ fun LoginScreen(
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = Color.White
                 ),
-                border = BorderStroke(1.dp, Color.White)
+                border = BorderStroke(1.dp, Color.White),
+                enabled = !isLoading
             ) {
                 Text(
                     text = "Create Account",
@@ -263,13 +395,14 @@ fun LoginScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedButton(
-                    onClick = { /* Google sign in */ },
+                    onClick = { /* Google sign in - can be implemented later */ },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color.White
                     ),
-                    border = BorderStroke(1.dp, Color.White)
+                    border = BorderStroke(1.dp, Color.White),
+                    enabled = !isLoading
                 ) {
                     Icon(
                         painter = painterResource(id = android.R.drawable.ic_menu_search),
@@ -282,13 +415,14 @@ fun LoginScreen(
                 }
 
                 OutlinedButton(
-                    onClick = { /* Facebook sign in */ },
+                    onClick = { /* Facebook sign in - can be implemented later */ },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color.White
                     ),
-                    border = BorderStroke(1.dp, Color.White)
+                    border = BorderStroke(1.dp, Color.White),
+                    enabled = !isLoading
                 ) {
                     Icon(
                         painter = painterResource(id = android.R.drawable.ic_menu_share),

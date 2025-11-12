@@ -26,10 +26,17 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.UserProfileChangeRequest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
+fun SignupScreen(
+    onSignupSuccess: () -> Unit,
+    onBackToLogin: () -> Unit
+) {
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -37,6 +44,11 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var agreeToTerms by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val auth = FirebaseAuth.getInstance()
+    val scope = rememberCoroutineScope()
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -54,7 +66,8 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
             onClick = onBackToLogin,
             modifier = Modifier
                 .padding(16.dp)
-                .align(Alignment.TopStart)
+                .align(Alignment.TopStart),
+            enabled = !isLoading
         ) {
             Icon(
                 Icons.Default.ArrowBack,
@@ -99,7 +112,10 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
             // Full Name TextField
             OutlinedTextField(
                 value = fullName,
-                onValueChange = { fullName = it },
+                onValueChange = {
+                    fullName = it
+                    errorMessage = null
+                },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Full Name", color = Color.White) },
                 leadingIcon = {
@@ -113,7 +129,8 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
                     focusedBorderColor = Color.White,
                     unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
                     cursorColor = Color.White
-                )
+                ),
+                enabled = !isLoading
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -121,7 +138,10 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
             // Email TextField
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it },
+                onValueChange = {
+                    email = it
+                    errorMessage = null
+                },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Email", color = Color.White) },
                 leadingIcon = {
@@ -136,7 +156,8 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
                     focusedBorderColor = Color.White,
                     unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
                     cursorColor = Color.White
-                )
+                ),
+                enabled = !isLoading
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -144,7 +165,10 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
             // Password TextField
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it },
+                onValueChange = {
+                    password = it
+                    errorMessage = null
+                },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Password", color = Color.White) },
                 leadingIcon = {
@@ -171,15 +195,40 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
                     focusedBorderColor = Color.White,
                     unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
                     cursorColor = Color.White
-                )
+                ),
+                enabled = !isLoading
             )
+
+            // Password strength indicator
+            if (password.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = when {
+                        password.length < 6 -> "Password must be at least 6 characters"
+                        password.length < 8 -> "Weak password"
+                        else -> "Good password"
+                    },
+                    color = when {
+                        password.length < 6 -> Color.Red
+                        password.length < 8 -> Color.Yellow
+                        else -> Color.Green
+                    },
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .align(Alignment.Start)
+                        .padding(start = 16.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Confirm Password TextField
             OutlinedTextField(
                 value = confirmPassword,
-                onValueChange = { confirmPassword = it },
+                onValueChange = {
+                    confirmPassword = it
+                    errorMessage = null
+                },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Confirm Password", color = Color.White) },
                 leadingIcon = {
@@ -209,7 +258,8 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
                         Color.Red.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.7f),
                     cursorColor = Color.White
                 ),
-                isError = confirmPassword.isNotEmpty() && password != confirmPassword
+                isError = confirmPassword.isNotEmpty() && password != confirmPassword,
+                enabled = !isLoading
             )
 
             if (confirmPassword.isNotEmpty() && password != confirmPassword) {
@@ -225,11 +275,29 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Error Message Display
+            if (errorMessage != null) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.Red.copy(alpha = 0.8f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = errorMessage!!,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
             // Terms Checkbox
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { agreeToTerms = !agreeToTerms },
+                    .clickable(enabled = !isLoading) { agreeToTerms = !agreeToTerms },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
@@ -239,7 +307,8 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
                         checkedColor = Color.White,
                         uncheckedColor = Color.White,
                         checkmarkColor = Color.Black
-                    )
+                    ),
+                    enabled = !isLoading
                 )
                 Text(
                     text = "I agree to the Terms & Conditions",
@@ -254,35 +323,97 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
             // Sign Up Button
             Button(
                 onClick = {
-                    if (fullName.isNotEmpty() &&
-                        email.isNotEmpty() &&
-                        password.isNotEmpty() &&
-                        password == confirmPassword &&
-                        agreeToTerms) {
-                        onSignupSuccess()
+                    // Validation
+                    when {
+                        fullName.isBlank() -> {
+                            errorMessage = "Please enter your full name"
+                            return@Button
+                        }
+                        email.isBlank() -> {
+                            errorMessage = "Please enter your email"
+                            return@Button
+                        }
+                        password.isBlank() -> {
+                            errorMessage = "Please enter a password"
+                            return@Button
+                        }
+                        password.length < 6 -> {
+                            errorMessage = "Password must be at least 6 characters"
+                            return@Button
+                        }
+                        password != confirmPassword -> {
+                            errorMessage = "Passwords don't match"
+                            return@Button
+                        }
+                        !agreeToTerms -> {
+                            errorMessage = "Please agree to Terms & Conditions"
+                            return@Button
+                        }
+                    }
+
+                    isLoading = true
+                    errorMessage = null
+
+                    scope.launch {
+                        try {
+                            // Create user with Firebase
+                            val result = auth.createUserWithEmailAndPassword(email, password).await()
+
+                            // Update user profile with display name
+                            val profileUpdates = UserProfileChangeRequest.Builder()
+                                .setDisplayName(fullName)
+                                .build()
+
+                            result.user?.updateProfile(profileUpdates)?.await()
+
+                            // Optional: Send email verification
+                            result.user?.sendEmailVerification()?.await()
+
+                            isLoading = false
+                            onSignupSuccess()
+                        } catch (e: Exception) {
+                            isLoading = false
+                            errorMessage = when {
+                                e.message?.contains("email address is already in use") == true ->
+                                    "This email is already registered"
+                                e.message?.contains("email address is badly formatted") == true ->
+                                    "Invalid email format"
+                                e.message?.contains("password is invalid") == true ->
+                                    "Password must be at least 6 characters"
+                                e.message?.contains("network") == true ->
+                                    "Network error. Please check your connection"
+                                else -> e.message ?: "Sign up failed"
+                            }
+                        }
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.White,
                     contentColor = Color.Black
                 ),
-                enabled = fullName.isNotEmpty() &&
+                enabled = !isLoading && fullName.isNotEmpty() &&
                         email.isNotEmpty() &&
                         password.isNotEmpty() &&
                         password == confirmPassword &&
                         agreeToTerms
             ) {
-                Text(
-                    text = "Sign Up",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.Black,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = "Sign Up",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -310,13 +441,14 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedButton(
-                    onClick = { /* Google sign up */ },
+                    onClick = { /* Google sign up - can be implemented later */ },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color.White
                     ),
-                    border = BorderStroke(1.dp, Color.White)
+                    border = BorderStroke(1.dp, Color.White),
+                    enabled = !isLoading
                 ) {
                     Icon(
                         painter = painterResource(id = android.R.drawable.ic_menu_search),
@@ -329,13 +461,14 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
                 }
 
                 OutlinedButton(
-                    onClick = { /* Facebook sign up */ },
+                    onClick = { /* Facebook sign up - can be implemented later */ },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color.White
                     ),
-                    border = BorderStroke(1.dp, Color.White)
+                    border = BorderStroke(1.dp, Color.White),
+                    enabled = !isLoading
                 ) {
                     Icon(
                         painter = painterResource(id = android.R.drawable.ic_menu_share),
@@ -360,7 +493,10 @@ fun SignupScreen(onSignupSuccess: () -> Unit, onBackToLogin: () -> Unit) {
                     fontSize = 14.sp,
                     color = Color.White
                 )
-                TextButton(onClick = onBackToLogin) {
+                TextButton(
+                    onClick = onBackToLogin,
+                    enabled = !isLoading
+                ) {
                     Text(
                         text = "Log In",
                         fontSize = 14.sp,
