@@ -28,8 +28,30 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+
+// Helper function to validate full name (must have at least 2 words)
+private fun isValidFullName(name: String): Boolean {
+    val trimmedName = name.trim()
+    val nameParts = trimmedName.split("\\s+".toRegex())
+
+    // Must have at least 2 parts (first name and last name)
+    if (nameParts.size < 2) return false
+
+    // Each part must have at least 2 characters and only contain letters
+    return nameParts.all { part ->
+        part.length >= 2 && part.all { it.isLetter() }
+    }
+}
+
+// Helper function to validate password (must contain both letters and numbers)
+private fun isValidPassword(password: String): Boolean {
+    val hasLetter = password.any { it.isLetter() }
+    val hasDigit = password.any { it.isDigit() }
+    return hasLetter && hasDigit
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +70,7 @@ fun SignupScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val auth = FirebaseAuth.getInstance()
+    val firestore = FirebaseFirestore.getInstance()
     val scope = rememberCoroutineScope()
 
     Box(
@@ -118,6 +141,7 @@ fun SignupScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Full Name", color = Color.White) },
+                placeholder = { Text("e.g. Yohane Kumwenda", color = Color.White.copy(alpha = 0.5f)) },
                 leadingIcon = {
                     Icon(Icons.Default.Person, contentDescription = "Name", tint = Color.White)
                 },
@@ -130,8 +154,22 @@ fun SignupScreen(
                     unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
                     cursorColor = Color.White
                 ),
-                enabled = !isLoading
+                enabled = !isLoading,
+                isError = fullName.isNotEmpty() && !isValidFullName(fullName)
             )
+
+            // Name validation hint
+            if (fullName.isNotEmpty() && !isValidFullName(fullName)) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Please enter first name and last name",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .align(Alignment.Start)
+                        .padding(start = 16.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -202,15 +240,21 @@ fun SignupScreen(
             // Password strength indicator
             if (password.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
+
+                val hasLetters = password.any { it.isLetter() }
+                val hasNumbers = password.any { it.isDigit() }
+                val isLongEnough = password.length >= 8
+
                 Text(
                     text = when {
-                        password.length < 6 -> "Password must be at least 6 characters"
-                        password.length < 8 -> "Weak password"
-                        else -> "Good password"
+                        !isLongEnough -> "Password must be at least 8 characters"
+                        !hasLetters || !hasNumbers -> "Password must contain both letters and numbers"
+                        password.length < 10 -> "Weak password - consider making it longer"
+                        else -> "Strong password ✓"
                     },
                     color = when {
-                        password.length < 6 -> Color.Red
-                        password.length < 8 -> Color.Yellow
+                        !isLongEnough || !hasLetters || !hasNumbers -> Color.Red
+                        password.length < 10 -> Color.Yellow
                         else -> Color.Green
                     },
                     fontSize = 12.sp,
@@ -265,7 +309,7 @@ fun SignupScreen(
             if (confirmPassword.isNotEmpty() && password != confirmPassword) {
                 Text(
                     text = "Passwords don't match",
-                    color = Color.Red,
+                    color = Color.White,
                     fontSize = 12.sp,
                     modifier = Modifier
                         .align(Alignment.Start)
@@ -279,13 +323,13 @@ fun SignupScreen(
             if (errorMessage != null) {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = Color.Red.copy(alpha = 0.8f)
+                        containerColor = Color.White.copy(alpha = 0.8f)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = errorMessage!!,
-                        color = Color.White,
+                        color = Color.Red,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(12.dp)
                     )
@@ -329,6 +373,10 @@ fun SignupScreen(
                             errorMessage = "Please enter your full name"
                             return@Button
                         }
+                        !isValidFullName(fullName) -> {
+                            errorMessage = "Please enter your full name (first and last name)"
+                            return@Button
+                        }
                         email.isBlank() -> {
                             errorMessage = "Please enter your email"
                             return@Button
@@ -337,8 +385,12 @@ fun SignupScreen(
                             errorMessage = "Please enter a password"
                             return@Button
                         }
-                        password.length < 6 -> {
-                            errorMessage = "Password must be at least 6 characters"
+                        password.length < 8 -> {
+                            errorMessage = "Password must be at least 8 characters"
+                            return@Button
+                        }
+                        !isValidPassword(password) -> {
+                            errorMessage = "Password must contain letters and numbers"
                             return@Button
                         }
                         password != confirmPassword -> {
@@ -356,8 +408,9 @@ fun SignupScreen(
 
                     scope.launch {
                         try {
-                            // Create user with Firebase
+                            // Create user with Firebase Authentication
                             val result = auth.createUserWithEmailAndPassword(email, password).await()
+                            val userId = result.user?.uid ?: throw Exception("User ID not found")
 
                             // Update user profile with display name
                             val profileUpdates = UserProfileChangeRequest.Builder()
@@ -365,6 +418,24 @@ fun SignupScreen(
                                 .build()
 
                             result.user?.updateProfile(profileUpdates)?.await()
+
+                            // Save user data to Firestore for admin management
+                            val userData = hashMapOf(
+                                "name" to fullName,
+                                "email" to email,
+                                "phoneNumber" to "", // Empty for now, can be updated in profile
+                                "profileImageUrl" to null,
+                                "createdAt" to System.currentTimeMillis(),
+                                "isActive" to true,
+                                "totalOrders" to 0,
+                                "totalSpent" to 0.0,
+                                "role" to "customer" // Default role is customer
+                            )
+
+                            firestore.collection("users")
+                                .document(userId)
+                                .set(userData)
+                                .await()
 
                             // Optional: Send email verification
                             result.user?.sendEmailVerification()?.await()
@@ -379,7 +450,7 @@ fun SignupScreen(
                                 e.message?.contains("email address is badly formatted") == true ->
                                     "Invalid email format"
                                 e.message?.contains("password is invalid") == true ->
-                                    "Password must be at least 6 characters"
+                                    "Password must be at least 8 characters"
                                 e.message?.contains("network") == true ->
                                     "Network error. Please check your connection"
                                 else -> e.message ?: "Sign up failed"

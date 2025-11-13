@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.R
 import com.example.myapplication.data.BooksData
+import com.example.myapplication.AdminAccountManagementScreen // Import the new screen
 import kotlinx.coroutines.launch
 
 // Data Models (re-using from BooksData)
@@ -44,11 +45,13 @@ data class Customer(
     val totalSpent: Double
 )
 
+// UPDATED: Added AccountManagement to the enum
 enum class AdminScreen(val title: String, val icon: ImageVector) {
     Dashboard("Dashboard", Icons.Default.Dashboard),
     Books("Books Management", Icons.Default.Book),
     Orders("Orders", Icons.Default.ShoppingCart),
     Customers("Customers", Icons.Default.People),
+    AccountManagement("Account Management", Icons.Default.ManageAccounts), // NEW
     Analytics("Analytics", Icons.Default.Analytics),
     Settings("Settings", Icons.Default.Settings)
 }
@@ -119,20 +122,24 @@ fun AdminDashboard(onLogout: () -> Unit) {
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent, // Make it transparent
+                            containerColor = Color.Transparent,
                             titleContentColor = Color.White,
                             navigationIconContentColor = Color.White
                         )
                     )
                 },
-                containerColor = Color.Transparent // Make scaffold transparent
+                containerColor = Color.Transparent
             ) { padding ->
                 Box(modifier = Modifier.padding(padding)) {
+                    // UPDATED: Added AccountManagement case
                     when (selectedScreen) {
                         AdminScreen.Dashboard -> DashboardScreen(allBooks)
                         AdminScreen.Books -> BooksScreen(allBooks, onAddBook = { allBooks.add(it) }, onDeleteBook = { allBooks.remove(it) })
                         AdminScreen.Orders -> OrdersScreen()
                         AdminScreen.Customers -> CustomersScreen()
+                        AdminScreen.AccountManagement -> AdminAccountManagementScreen(
+                            onBackClick = { selectedScreen = AdminScreen.Dashboard }
+                        ) // NEW
                         AdminScreen.Analytics -> AnalyticsScreen(allBooks)
                         AdminScreen.Settings -> SettingsScreen()
                     }
@@ -150,7 +157,7 @@ fun NavigationDrawerContent(
     onLogout: () -> Unit
 ) {
     ModalDrawerSheet(
-        drawerContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f) // Semi-transparent
+        drawerContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
     ) {
         Column(
             modifier = Modifier
@@ -200,7 +207,8 @@ fun DashboardScreen(books: List<Book>) {
             Text(
                 text = "Overview",
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
         }
 
@@ -254,10 +262,7 @@ fun DashboardScreen(books: List<Book>) {
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(top = 8.dp),
-                color = Color.White,
-
-
-
+                color = Color.White
             )
         }
 
@@ -284,7 +289,8 @@ fun BooksScreen(books: List<Book>, onAddBook: (Book) -> Unit, onDeleteBook: (Boo
             Text(
                 text = "All Books",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
             FloatingActionButton(
                 onClick = { showAddDialog = true },
@@ -332,7 +338,8 @@ fun OrdersScreen() {
     Column(modifier = Modifier.fillMaxSize()) {
         ScrollableTabRow(
             selectedTabIndex = filters.indexOf(selectedFilter),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
         ) {
             filters.forEach { filter ->
                 Tab(
@@ -370,7 +377,8 @@ fun CustomersScreen() {
                 text = "All Customers",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = 8.dp),
+                color = Color.White
             )
         }
 
@@ -393,7 +401,8 @@ fun AnalyticsScreen(books: List<Book>) {
             Text(
                 text = "Analytics & Reports",
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = Color.White
             )
         }
 
@@ -431,7 +440,10 @@ fun AnalyticsScreen(books: List<Book>) {
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+            ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Top Selling Books", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Spacer(modifier = Modifier.height(16.dp))
@@ -443,7 +455,6 @@ fun AnalyticsScreen(books: List<Book>) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(book.title, fontSize = 14.sp)
-                           // Text("${book.stock} sold", fontSize = 14.sp, color = Color.Gray)
                         }
                     }
                 }
@@ -462,13 +473,21 @@ fun SettingsScreen() {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("Settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "Settings",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
         }
         item {
-            Card(modifier = Modifier.fillMaxWidth()){
-                Column(modifier = Modifier.padding(16.dp)){
-                     Text("App Version", fontWeight = FontWeight.Bold)
-                     Text("1.0.0")
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("App Version", fontWeight = FontWeight.Bold)
+                    Text("1.0.0")
                 }
             }
         }
@@ -476,10 +495,13 @@ fun SettingsScreen() {
 }
 
 
-// Placeholder Composables
+// Component Composables
 @Composable
 fun StatCard(modifier: Modifier = Modifier, title: String, value: String, icon: ImageVector, color: Color) {
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Icon(icon, contentDescription = title, tint = color)
             Spacer(modifier = Modifier.height(8.dp))
@@ -491,7 +513,10 @@ fun StatCard(modifier: Modifier = Modifier, title: String, value: String, icon: 
 
 @Composable
 fun OrderCard(order: Order) {
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Order #${order.id}", fontWeight = FontWeight.Bold)
             Text("Customer: ${order.customerName}")
@@ -503,7 +528,10 @@ fun OrderCard(order: Order) {
 
 @Composable
 fun BookCard(book: Book, onDeleteClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+    ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(book.title, fontWeight = FontWeight.Bold)
@@ -550,7 +578,7 @@ fun AddBookDialog(onDismiss: () -> Unit, onAddBook: (Book) -> Unit) {
                     publisher = "",
                     publicationYear = 2024,
                     isbn = "",
-                    imageRes = R.drawable.mock_book // Default image
+                    imageRes = R.drawable.mock_book
                 )
                 onAddBook(newBook)
                 onDismiss()
@@ -590,7 +618,10 @@ fun DeleteBookDialog(book: Book, onDismiss: () -> Unit, onConfirm: () -> Unit) {
 
 @Composable
 fun CustomerCard(customer: Customer) {
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(customer.name, fontWeight = FontWeight.Bold)
             Text(customer.email)
@@ -602,7 +633,10 @@ fun CustomerCard(customer: Customer) {
 
 @Composable
 fun AnalyticsCard(modifier: Modifier = Modifier, title: String, value: String, subtitle: String) {
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+    ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(text = title, style = MaterialTheme.typography.bodyMedium)
             Text(text = value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
