@@ -148,11 +148,20 @@ fun SignupScreen(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = Color.White,           // Text color when focused - WHITE
+                    unfocusedTextColor = Color.White,         // Text color when not focused - WHITE
+                    disabledTextColor = Color.White,          // Text color when disabled - WHITE
+                    errorTextColor = Color.White,             // Text color when error - WHITE (THIS IS THE KEY!)
                     focusedBorderColor = Color.White,
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
-                    cursorColor = Color.White
+                    unfocusedBorderColor = Color.White,
+                    errorBorderColor = Color.White,           // Keep border white even on error
+                    cursorColor = Color.White,
+                    focusedLabelColor = Color.White,
+                    unfocusedLabelColor = Color.White,
+                    errorLabelColor = Color.White,            // Keep label white on error
+                    focusedLeadingIconColor = Color.White,
+                    unfocusedLeadingIconColor = Color.White,
+                    errorLeadingIconColor = Color.White       // Keep icon white on error
                 ),
                 enabled = !isLoading,
                 isError = fullName.isNotEmpty() && !isValidFullName(fullName)
@@ -253,7 +262,7 @@ fun SignupScreen(
                         else -> "Strong password ✓"
                     },
                     color = when {
-                        !isLongEnough || !hasLetters || !hasNumbers -> Color.Red
+                        !isLongEnough || !hasLetters || !hasNumbers -> Color.White
                         password.length < 10 -> Color.Yellow
                         else -> Color.Green
                     },
@@ -356,7 +365,7 @@ fun SignupScreen(
                 )
                 Text(
                     text = "I agree to the Terms & Conditions",
-                    fontSize = 14.sp,
+                    fontSize = 16.sp,
                     color = Color.White,
                     modifier = Modifier.padding(start = 8.dp)
                 )
@@ -483,6 +492,7 @@ fun SignupScreen(
                         text = "Sign Up",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
+
                     )
                 }
             }

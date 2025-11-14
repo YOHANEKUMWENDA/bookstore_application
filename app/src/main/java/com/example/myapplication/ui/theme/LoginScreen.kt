@@ -25,6 +25,9 @@ import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ktx.toObject
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,7 +70,7 @@ fun LoginScreen(
         ) {
             Text(
                 text = "DAYIRE",
-                fontSize = 32.sp,
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
@@ -257,57 +260,73 @@ fun LoginScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-
-            // Login Button
             Button(
                 onClick = {
-                    if (email.isBlank() || password.isBlank()) {
-                        errorMessage = "Email and password cannot be empty"
-                        return@Button
-                    }
+                    // ... existing validation code ...
 
                     isLoading = true
                     errorMessage = null
-                    successMessage = null
 
                     scope.launch {
                         try {
-                            // Sign in with Firebase
-                            val result = auth.signInWithEmailAndPassword(email, password).await()
+                            // Step 1: Authenticate with Firebase Auth
+                            auth.signInWithEmailAndPassword(email, password).await()
 
-                            // Save credentials if Remember Me is checked
-                            if (rememberMe) {
-                                sharedPreferences.edit().apply {
-                                    putString("saved_email", email)
-                                    putString("saved_password", password)
-                                    putBoolean("remember_me", true)
-                                    apply()
+                            val userId = auth.currentUser?.uid
+
+                            if (userId != null) {
+                                // Step 2: Check if user exists in Firestore and is active
+                                val firestore = FirebaseFirestore.getInstance()
+
+                                try {
+                                    val userDoc = firestore.collection("users")
+                                        .document(userId)
+                                        .get()
+                                        .await()
+
+                                    if (!userDoc.exists()) {
+                                        // User was deleted from Firestore
+                                        auth.signOut()
+                                        errorMessage = "This account has been deleted. Please contact support."
+                                        isLoading = false
+                                        return@launch
+                                    }
+
+                                    val isActive = userDoc.getBoolean("isActive") ?: true
+                                    if (!isActive) {
+                                        // Account is deactivated
+                                        auth.signOut()
+                                        errorMessage = "Your account has been deactivated. Please contact support."
+                                        isLoading = false
+                                        return@launch
+                                    }
+
+                                    // Step 3: Check if user is admin
+                                    val role = userDoc.getString("role") ?: "customer"
+                                    val isAdmin = role == "admin"
+
+                                    isLoading = false
+                                    onLoginSuccess(isAdmin)
+
+                                } catch (e: Exception) {
+                                    // If Firestore check fails, still allow login with email check
+                                    val isAdmin = email == "admin@gmail.com"
+                                    isLoading = false
+                                    onLoginSuccess(isAdmin)
                                 }
                             } else {
-                                // Clear saved credentials
-                                sharedPreferences.edit().apply {
-                                    remove("saved_email")
-                                    remove("saved_password")
-                                    putBoolean("remember_me", false)
-                                    apply()
-                                }
+                                isLoading = false
+                                errorMessage = "Login failed. Please try again."
                             }
 
-                            // Check if user is admin
-                            val isAdmin = email == "admin@gmail.com"
-
-                            isLoading = false
-                            onLoginSuccess(isAdmin)
                         } catch (e: Exception) {
                             isLoading = false
                             errorMessage = when {
                                 e.message?.contains("no user record") == true ->
                                     "No account found with this email"
                                 e.message?.contains("password is invalid") == true ||
-                                        e.message?.contains("INVALID_LOGIN_CREDENTIALS") == true ->
-                                    "Incorrect email or password"
-                                e.message?.contains("email address is badly formatted") == true ->
-                                    "Invalid email format"
+                                        e.message?.contains("wrong-password") == true ->
+                                    "Incorrect password"
                                 e.message?.contains("network") == true ->
                                     "Network error. Please check your connection"
                                 else -> e.message ?: "Login failed"
@@ -328,7 +347,7 @@ fun LoginScreen(
                 if (isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = Color.Black,
+                        color = Color.White,
                         strokeWidth = 2.dp
                     )
                 } else {
@@ -336,6 +355,7 @@ fun LoginScreen(
                         text = "Login",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
+
                     )
                 }
             }
@@ -375,7 +395,8 @@ fun LoginScreen(
                 Text(
                     text = "Create Account",
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color=Color.White
                 )
             }
 

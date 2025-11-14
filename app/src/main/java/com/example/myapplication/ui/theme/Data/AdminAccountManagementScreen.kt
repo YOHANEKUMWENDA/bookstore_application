@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.launch
@@ -54,12 +55,45 @@ fun AdminAccountManagementScreen(
     var selectedAccount by remember { mutableStateOf<CustomerAccount?>(null) }
     var showAccountDetails by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableStateOf(0) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isAuthorized by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val firestore = FirebaseFirestore.getInstance()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Verify admin authorization
+    LaunchedEffect(Unit) {
+        try {
+            val currentUser = FirebaseAuth.getInstance().currentUser
+            if (currentUser == null) {
+                onBackClick()
+                return@LaunchedEffect
+            }
+
+            val userDoc = firestore.collection("users")
+                .document(currentUser.uid)
+                .get()
+                .await()
+
+            if (userDoc.getString("role") != "admin") {
+                errorMessage = "Unauthorized: Admin access required"
+                onBackClick()
+                return@LaunchedEffect
+            }
+
+            isAuthorized = true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            errorMessage = "Authorization check failed"
+            onBackClick()
+        }
+    }
 
     // Load accounts - refreshes when refreshTrigger changes
-    LaunchedEffect(refreshTrigger) {
+    LaunchedEffect(refreshTrigger, isAuthorized) {
+        if (!isAuthorized) return@LaunchedEffect
+
         isLoading = true
         try {
             val snapshot = firestore.collection("users")
@@ -83,23 +117,38 @@ fun AdminAccountManagementScreen(
             }
         } catch (e: Exception) {
             e.printStackTrace()
+            errorMessage = "Failed to load accounts: ${e.message}"
         }
         isLoading = false
     }
 
-    // Filter accounts
-    val filteredAccounts = accounts.filter { account ->
-        val matchesSearch = account.name.contains(searchQuery, ignoreCase = true) ||
-                account.email.contains(searchQuery, ignoreCase = true)
-        val matchesFilter = when (filterStatus) {
-            "active" -> account.isActive
-            "inactive" -> !account.isActive
-            else -> true
+    // Show error messages
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short
+            )
+            errorMessage = null
         }
-        matchesSearch && matchesFilter
+    }
+
+    // Filter accounts with proper memoization
+    val filteredAccounts = remember(accounts, searchQuery, filterStatus) {
+        accounts.filter { account ->
+            val matchesSearch = account.name.contains(searchQuery, ignoreCase = true) ||
+                    account.email.contains(searchQuery, ignoreCase = true)
+            val matchesFilter = when (filterStatus) {
+                "active" -> account.isActive
+                "inactive" -> !account.isActive
+                else -> true
+            }
+            matchesSearch && matchesFilter
+        }
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Account Management") },
@@ -269,11 +318,8 @@ fun AdminAccountManagementScreen(
         AccountDetailsBottomSheet(
             account = selectedAccount!!,
             onDismiss = { showAccountDetails = false },
-            onAccountUpdated = { updatedAccount ->
-                accounts = accounts.map {
-                    if (it.uid == updatedAccount.uid) updatedAccount else it
-                }
-            }
+            onRefresh = { refreshTrigger++ },
+            onError = { error -> errorMessage = error }
         )
     }
 }
@@ -287,26 +333,29 @@ private fun StatCard(
 ) {
     Card(
         modifier = modifier,
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f))
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = value,
-                fontSize = 24.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = color
             )
             Text(
                 text = title,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
             )
         }
     }
@@ -419,7 +468,8 @@ private fun AccountCard(
 private fun AccountDetailsBottomSheet(
     account: CustomerAccount,
     onDismiss: () -> Unit,
-    onAccountUpdated: (CustomerAccount) -> Unit
+    onRefresh: () -> Unit,
+    onError: (String) -> Unit
 ) {
     var showDeactivateDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -494,7 +544,7 @@ private fun AccountDetailsBottomSheet(
                 label = "Status",
                 value = if (account.isActive) "Active" else "Inactive"
             )
-            DetailRow(icon = Icons.Default.PersonOutline, label = "Role", value = account.role.capitalize())
+            DetailRow(icon = Icons.Default.PersonOutline, label = "Role", value = account.role.capitalizeFirst())
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -581,18 +631,27 @@ private fun AccountDetailsBottomSheet(
                                     .update("isActive", !account.isActive)
                                     .await()
 
-                                onAccountUpdated(account.copy(isActive = !account.isActive))
                                 showDeactivateDialog = false
                                 onDismiss()
+                                onRefresh() // Trigger full refresh
                             } catch (e: Exception) {
                                 e.printStackTrace()
+                                onError("Failed to update account status: ${e.message}")
                             }
                             isUpdating = false
                         }
                     },
                     enabled = !isUpdating
                 ) {
-                    Text(if (account.isActive) "Deactivate" else "Activate")
+                    if (isUpdating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(if (account.isActive) "Deactivate" else "Activate")
+                    }
                 }
             },
             dismissButton = {
@@ -636,13 +695,12 @@ private fun AccountDetailsBottomSheet(
                                     .delete()
                                     .await()
 
-                                // Remove from local list immediately
-                                onAccountUpdated(account.copy(uid = "DELETED_${account.uid}"))
-
                                 showDeleteDialog = false
                                 onDismiss()
+                                onRefresh() // Trigger full refresh
                             } catch (e: Exception) {
                                 e.printStackTrace()
+                                onError("Failed to delete account: ${e.message}")
                             }
                             isUpdating = false
                         }
@@ -652,7 +710,15 @@ private fun AccountDetailsBottomSheet(
                         containerColor = MaterialTheme.colorScheme.error
                     )
                 ) {
-                    Text("Delete")
+                    if (isUpdating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Delete")
+                    }
                 }
             },
             dismissButton = {
@@ -706,6 +772,9 @@ private fun formatDate(timestamp: Long): String {
     return sdf.format(Date(timestamp))
 }
 
-private fun String.capitalize(): String {
-    return this.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+private fun String.capitalizeFirst(): String {
+    return this.replaceFirstChar {
+        if (it.isLowerCase()) it.titlecase(Locale.getDefault())
+        else it.toString()
+    }
 }

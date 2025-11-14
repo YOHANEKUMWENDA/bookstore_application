@@ -23,7 +23,10 @@ import androidx.compose.ui.unit.sp
 import com.example.myapplication.R
 import com.example.myapplication.data.BooksData
 import com.example.myapplication.AdminAccountManagementScreen // Import the new screen
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 // Data Models (re-using from BooksData)
 typealias Book = com.example.myapplication.data.Book
@@ -197,6 +200,22 @@ fun NavigationDrawerContent(
 // Dashboard Screen
 @Composable
 fun DashboardScreen(books: List<Book>) {
+    var customerCount by remember { mutableStateOf(0) }
+    val firestore = FirebaseFirestore.getInstance()
+
+    // Load real customer count
+    LaunchedEffect(Unit) {
+        try {
+            val snapshot = firestore.collection("users")
+                .whereEqualTo("role", "customer")
+                .get()
+                .await()
+            customerCount = snapshot.size()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -249,7 +268,7 @@ fun DashboardScreen(books: List<Book>) {
                 StatCard(
                     modifier = Modifier.weight(1f),
                     title = "Customers",
-                    value = "892",
+                    value = customerCount.toString(),
                     icon = Icons.Default.Person,
                     color = Color(0xFF9C27B0)
                 )
@@ -366,6 +385,35 @@ fun OrdersScreen() {
 // Customers Screen
 @Composable
 fun CustomersScreen() {
+    var customers by remember { mutableStateOf<List<Customer>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    val firestore = FirebaseFirestore.getInstance()
+
+    // Load real customers from Firestore
+    LaunchedEffect(Unit) {
+        isLoading = true
+        try {
+            val snapshot = firestore.collection("users")
+                .whereEqualTo("role", "customer") // Only show customers, not admins
+                .orderBy("createdAt", Query.Direction.DESCENDING)
+                .get()
+                .await()
+
+            customers = snapshot.documents.mapNotNull { doc ->
+                Customer(
+                    id = doc.id,
+                    name = doc.getString("name") ?: "Unknown",
+                    email = doc.getString("email") ?: "",
+                    totalOrders = doc.getLong("totalOrders")?.toInt() ?: 0,
+                    totalSpent = doc.getDouble("totalSpent") ?: 0.0
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        isLoading = false
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -382,8 +430,53 @@ fun CustomersScreen() {
             )
         }
 
-        items(getSampleCustomers()) { customer ->
-            CustomerCard(customer)
+        if (isLoading) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color.White)
+                }
+            }
+        } else if (customers.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.People,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "No customers yet",
+                            fontSize = 20.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = "Customers will appear here once they make an order",
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                    }
+                }
+            }
+        } else {
+            items(customers) { customer ->
+                CustomerCard(customer)
+            }
         }
     }
 }
